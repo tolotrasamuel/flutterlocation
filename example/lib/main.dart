@@ -22,6 +22,7 @@ class _MyAppState extends State<MyApp> {
 
   Location _location = new Location();
   bool _permission = false;
+  bool _locationService = false;
   String error;
 
   bool currentWidget = true;
@@ -95,6 +96,21 @@ class _MyAppState extends State<MyApp> {
             ? 'Has permission : Yes' 
             : "Has permission : No")));
 
+    widgets.add(new Center(
+        child: new Text(_locationService
+            ? 'Has enabled gps : Yes'
+            : "Has enabled gps: No")));
+
+    widgets.add(
+      FloatingActionButton(
+        onPressed: () async {
+          _locationService = await _location?.enableGPS();
+          setState((){});
+        },
+        tooltip: 'Increment',
+        child: Icon(Icons.add),
+      ),
+    );
 
     return new MaterialApp(
         home: new Scaffold(

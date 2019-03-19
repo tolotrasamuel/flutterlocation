@@ -2,16 +2,19 @@ package com.lyokone.location;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Intent;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.Build;
 import android.os.Looper;
+
 import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+
 import android.util.Log;
 
 import com.google.android.gms.common.api.ApiException;
@@ -27,6 +30,7 @@ import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.Task;
 
 import java.util.HashMap;
 
@@ -38,12 +42,13 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.PluginRegistry;
+import io.flutter.plugin.common.PluginRegistry.ActivityResultListener;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 
 /**
  * LocationPlugin
  */
-public class LocationPlugin implements MethodCallHandler, StreamHandler {
+public class LocationPlugin implements MethodCallHandler, StreamHandler, ActivityResultListener {
     private static final String STREAM_CHANNEL_NAME = "lyokone/locationstream";
     private static final String METHOD_CHANNEL_NAME = "lyokone/location";
 
@@ -51,6 +56,8 @@ public class LocationPlugin implements MethodCallHandler, StreamHandler {
     private static final int REQUEST_CHECK_SETTINGS = 0x1;
     private static final long UPDATE_INTERVAL_IN_MILLISECONDS = 10000;
     private static final long FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS = UPDATE_INTERVAL_IN_MILLISECONDS / 2;
+
+    private final static int REQUEST_LOCATION = 199;
 
     private final FusedLocationProviderClient mFusedLocationClient;
     private final SettingsClient mSettingsClient;
@@ -270,20 +277,77 @@ public class LocationPlugin implements MethodCallHandler, StreamHandler {
             } else {
                 getLastLocation(result);
             }
-            
-        } else if(call.method.equals("hasPermission")) {
-            if(checkPermissions()) {
+
+        } else if (call.method.equals("hasPermission")) {
+            if (checkPermissions()) {
                 result.success(1);
             } else {
                 result.success(0);
             }
         } else if (call.method.equals("requestPermission")) {
-            this.waitingForPermission = true; 
+            this.waitingForPermission = true;
             this.result = result;
             requestPermissions();
+        } else if (call.method.equals("enableGPS")) {
+            enableGPS();
         } else {
             result.notImplemented();
         }
+    }
+
+    private void enableGPS() {
+        LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder();
+        builder.addLocationRequest(mLocationRequest);
+        Task<LocationSettingsResponse> task = mSettingsClient.checkLocationSettings(builder.build());
+        task.addOnFailureListener(activity, new OnFailureListener() {
+            @Override
+            public void onFailure(@NonNull Exception e) {
+                if (e instanceof ResolvableApiException) {
+                    // Location settings are not satisfied, but this can be fixed
+                    // by showing the user a dialog.
+                    try {
+                        // Show the dialog by calling startResolutionForResult(),
+                        // and check the result in onActivityResult().
+                        ResolvableApiException resolvable = (ResolvableApiException) e;
+                        resolvable.startResolutionForResult(activity,
+                                REQUEST_LOCATION);
+
+                    } catch (IntentSender.SendIntentException sendEx) {
+                        // Ignore the error.
+                    }
+                }
+            }
+        });
+        mLocationSettingsRequest = builder.build();
+    }
+
+
+    @Override
+    public boolean onActivityResult(int requestCode, int resultCode, Intent data) {
+        Log.d("onActivityResult()", Integer.toString(resultCode));
+        int success = 0;
+        //final LocationSettingsStates states = LocationSettingsStates.fromIntent(data);
+        switch (requestCode) {
+            case REQUEST_LOCATION:
+                switch (resultCode) {
+                    case Activity.RESULT_OK: {
+                        // All required changes were successfully made
+                        success = 1;
+                        break;
+                    }
+                    case Activity.RESULT_CANCELED: {
+                        // The user was asked to change settings, but chose not to
+                        success = 0;
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                }
+                break;
+        }
+        result.success(success);
+        return false;
     }
 
     @Override
@@ -338,4 +402,5 @@ public class LocationPlugin implements MethodCallHandler, StreamHandler {
         mFusedLocationClient.removeLocationUpdates(mLocationCallback);
         events = null;
     }
+
 }
